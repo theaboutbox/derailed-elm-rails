@@ -2,12 +2,19 @@ import Time exposing (Time, second)
 import Html exposing (Html, program, div, button, text, li, ul)
 import Html.Events exposing (onClick)
 import Task
+import Http
+import Json.Decode as Decode
+import Json.Encode as Encode
+import Debug exposing (log)
 
 type alias User = { name: String, id: Int }
 type Mood = Nothing | Happy | Sad | Indifferent
 type alias Feeling = { mood: Mood, feltAt: Time }
 type alias Events = { user: User, feelings: List Feeling}
-type Msg = UserMoodIs Mood | LogMood Time
+
+type Msg = UserMoodIs Mood 
+         | LogMood Time
+         | NewEvents (Result Http.Error String)
 
 type alias Model = { currentMood: Mood, events: Events }
 
@@ -17,7 +24,7 @@ main = program { init = init, view = view, update = update, subscriptions = subs
 init: (Model, Cmd Msg)
 init =
     ({ currentMood = Nothing, 
-       events = { user = { name = "Cameron", id = 1 }, feelings = [] } }, Cmd.none)
+       events = { user = { name = "Cameron", id = 1 }, feelings = [] } }, queryEvents "1")
 
 -- Serialize a Feeling as an HTML list item
 feelingToListItem: Feeling -> Html Msg
@@ -61,8 +68,30 @@ update msg model =
     case msg of
         UserMoodIs mood -> ({model | currentMood = mood}, Task.perform LogMood Time.now)
         LogMood time -> (logEvent model time, Cmd.none)
+        NewEvents (Ok events) -> 
+            let l = log "Event Data" events
+            in (model, Cmd.none)
+        NewEvents (Err _) -> (model, Cmd.none)
 
 -- Event subscriptions
 subscriptions : Model -> Sub Msg
 subscriptions model =
   Sub.none
+
+-- HTTP
+queryEvents: String -> Cmd Msg
+queryEvents userId =
+    let url = "http://localhost:3000/graphql"
+        query = """
+            { 
+                user(id: "1") { 
+                    name
+                    id 
+                } 
+            }"""
+        body = Encode.object [ ("query", Encode.string query) ]
+        request = Http.post url (Http.jsonBody body) decodeEvents
+    in Http.send NewEvents request
+
+decodeEvents: Decode.Decoder String
+decodeEvents = Decode.at ["data","user","name"] Decode.string
