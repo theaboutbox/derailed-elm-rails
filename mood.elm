@@ -6,15 +6,16 @@ import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Debug exposing (log)
+import Json.Decode.Pipeline as Pipeline
 
-type alias User = { name: String, id: Int }
+type alias User = { name: String, id: String }
 type Mood = Nothing | Happy | Sad | Indifferent
 type alias Feeling = { mood: Mood, feltAt: Time }
 type alias Events = { user: User, feelings: List Feeling}
 
 type Msg = UserMoodIs Mood 
          | LogMood Time
-         | NewEvents (Result Http.Error String)
+         | NewEvents (Result Http.Error User)
 
 type alias Model = { currentMood: Mood, events: Events }
 
@@ -24,7 +25,7 @@ main = program { init = init, view = view, update = update, subscriptions = subs
 init: (Model, Cmd Msg)
 init =
     ({ currentMood = Nothing, 
-       events = { user = { name = "Cameron", id = 1 }, feelings = [] } }, queryEvents "1")
+       events = { user = { name = "Cameron", id = "1" }, feelings = [] } }, queryEvents "1")
 
 -- Serialize a Feeling as an HTML list item
 feelingToListItem: Feeling -> Html Msg
@@ -71,7 +72,9 @@ update msg model =
         NewEvents (Ok events) -> 
             let l = log "Event Data" events
             in (model, Cmd.none)
-        NewEvents (Err _) -> (model, Cmd.none)
+        NewEvents (Err reason) -> 
+            let l = log "Error" reason
+            in (model, Cmd.none)
 
 -- Event subscriptions
 subscriptions : Model -> Sub Msg
@@ -79,19 +82,34 @@ subscriptions model =
   Sub.none
 
 -- HTTP
-queryEvents: String -> Cmd Msg
-queryEvents userId =
+queryEventRequest: String -> Http.Request User
+queryEventRequest userId =
     let url = "http://localhost:3000/graphql"
         query = """
             { 
                 user(id: "1") { 
                     name
-                    id 
+                    id
+                    events {
+                        mood
+                        felt_at
+                    }
                 } 
             }"""
         body = Encode.object [ ("query", Encode.string query) ]
-        request = Http.post url (Http.jsonBody body) decodeEvents
-    in Http.send NewEvents request
+    in
+        Http.post url (Http.jsonBody body) decodeEvents
 
-decodeEvents: Decode.Decoder String
-decodeEvents = Decode.at ["data","user","name"] Decode.string
+queryEvents: String -> Cmd Msg
+queryEvents userId =
+    Http.send NewEvents (queryEventRequest userId)
+
+decodeUser: Decode.Decoder User
+decodeUser = 
+    Pipeline.decode User
+    |> Pipeline.required "name" Decode.string
+    |> Pipeline.required "id" Decode.string
+
+decodeEvents: Decode.Decoder User
+decodeEvents = 
+    Decode.at ["data","user"] <| decodeUser
