@@ -18,6 +18,7 @@ type alias User = { name: String, id: String, events: List Feeling }
 type Msg = UserMoodIs Mood 
          | LogMood Time
          | NewEvents (Result Http.Error User)
+         | SavedEvent (Result Http.Error Feeling)
 
 type alias Model = { currentMood: Mood, currentUser: User }
 
@@ -60,28 +61,40 @@ view model =
     ]
 
 -- Update the model with the user's mood at a given time
-logEvent: Model -> Time -> Model
-logEvent model time =
-    let newFeeling = { mood = model.currentMood, felt_at = time }
-        currentUser = model.currentUser
+logEvent: Model -> Feeling -> Model
+logEvent model feeling =
+    let currentUser = model.currentUser
         events = currentUser.events
     in
         { model | currentUser = 
-            { currentUser | events = newFeeling :: events }
+            { currentUser | events = feeling :: events }
         }
+
+newFeeling: Mood -> Time -> Feeling
+newFeeling mood time = { mood=mood, felt_at=time }
 
 -- Main event handler
 update: Msg -> Model -> (Model, Cmd Msg)
 update msg model =
     case msg of
         UserMoodIs mood -> ({model | currentMood = mood}, Task.perform LogMood Time.now)
-        LogMood time -> (logEvent model time, Cmd.none)
+        LogMood time -> 
+            let feeling = newFeeling model.currentMood time
+                newModel = logEvent model feeling
+                saveRequest = saveEventRequest model.currentUser.id feeling
+            in (newModel,  Http.send SavedEvent saveRequest)
         NewEvents (Ok events) -> 
-            let l = log "Event Data" events
-            in ({model | currentUser = events}, Cmd.none)
+            ({model | currentUser = events}, Cmd.none)
         NewEvents (Err reason) -> 
-            let l = log "Error" reason
+            let l = log "NewEvents Err" reason
             in (model, Cmd.none)
+        SavedEvent (Ok event) ->
+            let l = log "SavedEvent OK" event
+            in (model, Cmd.none)
+        SavedEvent (Err reason) ->
+            let l = log "SavedEvent Err" reason
+            in (model, Cmd.none)
+
 
 -- Event subscriptions
 subscriptions : Model -> Sub Msg
@@ -107,9 +120,35 @@ queryEventRequest userId =
     in
         Http.post url (Http.jsonBody body) decodeUser
 
+saveEventRequest: String -> Feeling -> Http.Request Feeling
+saveEventRequest userId feeling =
+    let url = "http://localhost:3000/graphql"
+        mutation = """
+            mutation saveEvent($user_id: String!, $mood: String!, $felt_at: Float!) {
+                addEvent(input: {user_id: $user_id, mood: $mood, felt_at: $felt_at}) {
+                    event {
+                        mood
+                        felt_at
+                    }
+                }
+            }
+        """
+        vars = Encode.object [
+            ("user_id", Encode.string userId)
+            ,("mood", Encode.string (toString feeling.mood))
+            ,("felt_at", Encode.float (feeling.felt_at/1000))
+        ]
+        body = Encode.object [("query", Encode.string mutation),("variables", vars)]
+    in
+        Http.post url (Http.jsonBody body) decodeNewFeeling
+
 queryEvents: String -> Cmd Msg
 queryEvents userId =
     Http.send NewEvents (queryEventRequest userId)
+
+decodeNewFeeling: Decode.Decoder Feeling
+decodeNewFeeling =
+    Decode.at ["data","addEvent","event"] decodeFeeling
 
 decodeUser: Decode.Decoder User
 decodeUser =
