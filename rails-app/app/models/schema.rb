@@ -10,7 +10,7 @@ end
 EventType = GraphQL::ObjectType.define do
     name 'Event'
     field :mood, !types.String
-    field :felt_at, !types.String
+    field :felt_at, !types.Float
 end
 
 QueryRoot = GraphQL::ObjectType.define do
