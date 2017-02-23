@@ -1,5 +1,6 @@
 import Time exposing (Time)
-import Html exposing (Html, program, div, button, text, li, ul)
+import Html exposing (Html, program, div, button, text, li, ul, img, h1)
+import Html.Attributes
 import Html.Events exposing (onClick)
 import Task
 import Http
@@ -30,6 +31,22 @@ init =
     ({ currentMood = Nothing, 
        currentUser = { name = "Cameron", id = "1", events = [] } }, queryEvents "1")
 
+-- Make a button from a mood
+moodToButton: Mood -> Html Msg 
+moodToButton mood =
+    let
+      image_path = "images/" ++ toString mood ++ ".png"
+    in
+      div [ 
+          onClick (UserMoodIs mood), 
+          Html.Attributes.style [ ("width","300px"), ("display","inline-block") ]
+      ] [
+          img [ 
+              Html.Attributes.src image_path,
+              Html.Attributes.style [ ("width","300px") ]
+          ] []
+      ]
+
 -- Serialize a Feeling as an HTML list item
 feelingToListItem: Feeling -> Html Msg
 feelingToListItem feeling =
@@ -49,9 +66,11 @@ view: Model -> Html Msg
 view model =
     div []
     [   div []
-        [ button [ onClick (UserMoodIs Happy) ] [ text "Happy" ] 
-        , button [ onClick (UserMoodIs Indifferent) ] [ text "Indifferent" ] 
-        , button [ onClick (UserMoodIs Sad) ] [ text "Sad" ] 
+        [ 
+        h1 [] [ text ("How are you feeling, " ++ model.currentUser.name ++ "?") ]
+        , moodToButton Happy
+        , moodToButton Sad
+        , moodToButton Indifferent
         ],
         div []
         [ text model.currentUser.name,
